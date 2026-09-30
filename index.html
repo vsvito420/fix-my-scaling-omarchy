@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="__LANG__">
+<head>
+<meta charset="utf-8">
+<title>__TITLE__</title>
+<style>
+  :root { --bg: #0d0f12; --fg: #e8e8e8; --muted: #9aa0a6; --accent: #3fa9ff; --guide: #ffcc33; --mark: #3fff9f; --touch: #ff5555; --panel: rgba(24,27,32,.94); }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 16px system-ui, sans-serif; overflow: hidden; user-select: none; touch-action: none; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #role { position: fixed; top: 40%; transform: translateY(-50%); width: 100%; text-align: center; pointer-events: none; }
+  #role .big { font-size: 44px; font-weight: 800; letter-spacing: .02em; }
+  #role .small { color: var(--muted); margin-top: 6px; }
+  #panel { position: fixed; top: 50%; transform: translateY(-50%); width: min(460px, 70vw); max-height: 92vh; overflow: auto; background: var(--panel); border: 1px solid #333a44; border-radius: 12px; padding: 18px 20px; box-sizing: border-box; touch-action: auto; }
+  #panel h1 { font-size: 20px; margin: 0 0 4px; }
+  #panel p.help { color: var(--muted); margin: 0 0 14px; font-size: 14px; line-height: 1.45; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+  .row label { width: 130px; color: var(--muted); font-size: 14px; }
+  select, button { font: inherit; font-size: 15px; background: #252b33; color: var(--fg); border: 1px solid #3a424d; border-radius: 7px; padding: 7px 11px; }
+  button { cursor: pointer; }
+  button.on { background: var(--accent); color: #001; border-color: var(--accent); font-weight: 600; }
+  button.primary { background: #2e7d32; border-color: #3fa14a; font-weight: 600; }
+  button:hover { filter: brightness(1.15); }
+  button.sugg { margin: 4px 6px 0 0; padding: 4px 9px; font-size: 13px; }
+  #result { background: #14181d; border-radius: 8px; padding: 10px 12px; font-size: 14px; line-height: 1.6; margin: 12px 0; font-variant-numeric: tabular-nums; }
+  #result b { color: var(--guide); }
+  .muted { color: var(--muted); }
+  #status { font-size: 13px; color: var(--muted); min-height: 1.3em; white-space: pre-wrap; }
+  #status.warn { color: #ff9f43; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="role"><div class="big" id="roleBig"></div><div class="small" id="roleSmall"></div></div>
+
+<div id="panel" hidden>
+  <h1 data-t="title"></h1>
+  <p class="help" data-t="help"></p>
+
+  <div class="row"><label data-t="mainMonitor"></label><select id="main"></select></div>
+  <div class="row"><label data-t="sideIs"></label>
+    <button id="posLeft" data-t="left"></button><button id="posRight" data-t="right"></button>
+    <span class="muted" style="font-size:14px" data-t="ofMain"></span>
+  </div>
+  <div class="row"><label data-t="mainScale"></label><select id="mainScale"></select></div>
+  <div class="row"><label data-t="linesOn"></label>
+    <button id="guideMain" data-t="main"></button><button id="guideSide" data-t="side"></button>
+  </div>
+
+  <div id="result"></div>
+
+  <div class="actions">
+    <button id="estimate" data-t="estimate"></button>
+    <button id="apply" data-t="apply"></button>
+    <button id="save" class="primary" data-t="save"></button>
+  </div>
+  <div class="actions">
+    <button id="revert" data-t="revert"></button>
+    <button id="quit" data-t="quit"></button>
+  </div>
+  <p id="status"></p>
+</div>
+
+<script>
+const LANG = '__LANG__', TOKEN = '__TOKEN__';
+const T = {
+  en: {
+    title: 'Fix My Scaling',
+    help: 'On one monitor, <span style="color:var(--mark)">green markers</span> show the top and bottom corner of the shared edge. ' +
+          'On the other one, drag the <span style="color:var(--guide)">yellow lines</span> (mouse or finger, fine-tune with ↑/↓, Shift = 10 px, Tab switches line) ' +
+          'until they are <b>physically level</b> with the green corners. The cross in the middle is for checking.',
+    mainMonitor: 'Main monitor', sideIs: 'Second monitor is', left: 'left', right: 'right', ofMain: 'of the main monitor',
+    mainScale: 'Main scale', linesOn: 'Yellow lines on', main: 'Main', side: 'Second',
+    estimate: 'Estimate (spec sheet)', apply: 'Test live', save: 'Save', revert: 'Load saved state', quit: 'Quit',
+    roleMain: 'MAIN', roleSide: 'SECOND',
+    guideHint: 'Drag the yellow lines level with the green corners on the other monitor',
+    markHint: 'Green markers = corners of this monitor at the shared edge',
+    topLine: 'Top edge of the other monitor', bottomLine: 'Bottom edge of the other monitor',
+    topCorner: 'top corner', bottomCorner: 'bottom corner', middle: 'Middle',
+    scaleOf: 'Scale of', exactWould: 'exact would be', fits: 'fits', deviation: 'off by',
+    position: 'Position', combos: 'Matching combinations (main / second):', current: 'Current',
+    oneMonitor: 'Only one monitor found.',
+    estimated: 'Starting values from the monitor dimensions (vertically centred).',
+    applied: 'Applied live, no overlap (not saved yet). Move the mouse across the edge to check.',
+    overlap: 'Warning, monitors overlap: ',
+    saved: 'Saved to monitors.lua.', backup: 'Backup: ', hyprErrors: 'Saved, but Hyprland reports:\n',
+    reverted: 'Loaded the saved state from monitors.lua.',
+  },
+  de: {
+    title: 'Monitor-Ausrichtung',
+    help: 'Auf einem Monitor markieren <span style="color:var(--mark)">grüne Marker</span> die obere und untere Ecke der gemeinsamen Kante. ' +
+          'Zieh auf dem anderen Monitor die <span style="color:var(--guide)">gelben Linien</span> (Maus oder Finger, feinjustieren mit ↑/↓, Shift = 10 px, Tab wechselt die Linie), ' +
+          'bis sie <b>physisch auf gleicher Höhe</b> wie die grünen Ecken sind. Das Kreuz in der Mitte dient zur Kontrolle.',
+    mainMonitor: 'Haupt-Monitor', sideIs: 'Neben-Monitor ist', left: 'links', right: 'rechts', ofMain: 'vom Haupt-Monitor',
+    mainScale: 'Haupt-Skalierung', linesOn: 'Gelbe Linien auf', main: 'Haupt', side: 'Neben',
+    estimate: 'Schätzen (Datenblatt)', apply: 'Live testen', save: 'Speichern', revert: 'Gespeicherten Stand laden', quit: 'Beenden',
+    roleMain: 'HAUPT', roleSide: 'NEBEN',
+    guideHint: 'Gelbe Linien auf die Höhe der grünen Ecken am anderen Monitor ziehen',
+    markHint: 'Grüne Marker = Ecken dieses Monitors an der gemeinsamen Kante',
+    topLine: 'Oberkante vom anderen Monitor', bottomLine: 'Unterkante vom anderen Monitor',
+    topCorner: 'obere Ecke', bottomCorner: 'untere Ecke', middle: 'Mitte',
+    scaleOf: 'Skalierung', exactWould: 'genau wäre', fits: 'passt', deviation: 'Abweichung',
+    position: 'Position', combos: 'Passende Kombinationen (Haupt / Neben):', current: 'Aktuell',
+    oneMonitor: 'Nur ein Monitor gefunden.',
+    estimated: 'Startwerte aus den Monitor-Maßen (vertikal zentriert).',
+    applied: 'Live angewendet, keine Überlappung (noch nicht gespeichert). Maus über die Kante schieben und prüfen.',
+    overlap: 'Achtung, Monitore überlappen: ',
+    saved: 'Gespeichert in monitors.lua.', backup: 'Backup: ', hyprErrors: 'Gespeichert, aber Hyprland meldet:\n',
+    reverted: 'Gespeicherten Stand aus monitors.lua geladen.',
+  },
+};
+const t = k => (T[LANG] || T.en)[k];
+
+const me = new URLSearchParams(location.search).get('mon');
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+let S = null;              // last server state
+let drag = null;           // 'top' | 'bottom' while dragging
+let selected = 'top';      // line moved by the arrow keys
+let local = null;          // local line values while dragging
+let touches = [];          // touch points, to check the touchscreen
+let sending = false, pending = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+const fmt = (x, d = 3) => Number(x).toFixed(d).replace(/\.?0+$/, '');
+const W = () => innerWidth, H = () => innerHeight;
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+document.querySelectorAll('[data-t]').forEach(el => { el.innerHTML = t(el.dataset.t); });
+
+function resize() { c.width = W() * devicePixelRatio; c.height = H() * devicePixelRatio; ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0); draw(); }
+addEventListener('resize', resize);
+
+async function post(path, body = {}) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': TOKEN }, body: JSON.stringify(body) });
+  return r.json();
+}
+
+// Throttle line updates so dragging does not send every single move
+function sendUi(body) {
+  pending = Object.assign(pending || {}, body);
+  if (sending) return;
+  sending = true;
+  const b = pending; pending = null;
+  post('/api/ui', b).then(refresh).finally(() => { sending = false; if (pending) sendUi({}); });
+}
+
+async function refresh() {
+  try {
+    S = await (await fetch('/api/state', { headers: { 'X-Token': TOKEN } })).json();
+  } catch { return; }
+  if (!drag) local = null;
+  render();
+}
+
+const U = () => S.ui;
+const isMain = () => me === U().main;
+const isSide = () => me === U().side;
+const isGuide = () => me === U().guide_on;
+const opp = s => (s === 'right' ? 'left' : 'right');
+// Edge of this monitor that faces the other monitor
+const myEdge = () => (isMain() ? U().side_pos : opp(U().side_pos));
+const nameOf = n => (S.monitors[n]?.description || n).split(' ').slice(0, 2).join(' ') + ` (${n})`;
+const guides = () => local || { top: U().top, bottom: U().bottom };
+
+function render() {
+  if (!S) return;
+  const role = isMain() ? t('roleMain') : isSide() ? t('roleSide') : '—';
+  $('roleBig').textContent = `${role}: ${nameOf(me)}`;
+  $('roleSmall').textContent = isGuide() ? t('guideHint') : t('markHint');
+  const panel = $('panel');
+  panel.hidden = !isMain();
+  // Panel on the side away from the shared edge
+  panel.style.left = myEdge() === 'right' ? '4vw' : '';
+  panel.style.right = myEdge() === 'left' ? '4vw' : '';
+  if (isMain()) renderPanel();
+  draw();
+}
+
+function renderPanel() {
+  const u = U(), r = S.result;
+  const mainSel = $('main');
+  const names = Object.keys(S.monitors).sort();
+  if (mainSel.options.length !== names.length) {
+    mainSel.innerHTML = names.map(n => `<option value="${esc(n)}">${esc(nameOf(n))}</option>`).join('');
+  }
+  mainSel.value = u.main;
+  const ms = $('mainScale');
+  const scales = S.monitors[u.main].clean_scales.filter(s => s <= 3);
+  const key = scales.join(',');
+  if (ms.dataset.key !== key) {
+    ms.innerHTML = scales.map(s => `<option value="${s}">${fmt(s)}</option>`).join('');
+    ms.dataset.key = key;
+  }
+  ms.value = String(u.main_scale);
+  $('posLeft').classList.toggle('on', u.side_pos === 'left');
+  $('posRight').classList.toggle('on', u.side_pos === 'right');
+  $('guideMain').classList.toggle('on', u.guide_on === u.main);
+  $('guideSide').classList.toggle('on', u.guide_on === u.side);
+  if (!r) { $('result').textContent = t('oneMonitor'); return; }
+  const p = r.positions, ok = Math.abs(r.error_pct) < 1.5;
+  $('result').innerHTML =
+    `${t('scaleOf')} ${esc(nameOf(u.side))}: <b>${fmt(r.scale)}</b> ` +
+    `<span class="muted">(${t('exactWould')} ${fmt(r.exact)}, ${ok ? t('fits') : t('deviation')} ${fmt(Math.abs(r.error_pct), 1)} %)</span><br>` +
+    `${t('position')} ${esc(nameOf(u.main))}: ${p[u.main].join(' × ')}<br>` +
+    `${t('position')} ${esc(nameOf(u.side))}: ${p[u.side].join(' × ')}<br>` +
+    `<div style="margin-top:6px">${t('combos')}</div>` +
+    S.suggestions.map(o => `<button class="sugg${o.main_scale === u.main_scale ? ' on' : ''}" data-s="${o.main_scale}">` +
+      `${fmt(o.main_scale)} / ${fmt(o.side_scale)} <span style="opacity:.7">±${fmt(Math.abs(o.error_pct), 1)}%</span></button>`).join('') + '<br>' +
+    `<span class="muted">${t('current')}: ${Object.values(S.monitors).map(m => `${esc(m.name)} ${m.x}×${m.y} @${fmt(m.scale)}`).join(', ')}</span>`;
+}
+
+function draw() {
+  const w = W(), h = H();
+  ctx.clearRect(0, 0, w, h);
+  if (!S || !(isMain() || isSide())) return;
+  const edge = myEdge();
+  const ex = edge === 'right' ? w : 0;       // x of the shared edge
+  const dir = edge === 'right' ? -1 : 1;     // direction into the screen
+
+  // Highlight the shared edge
+  ctx.fillStyle = css('--accent');
+  ctx.fillRect(edge === 'right' ? w - 4 : 0, 0, 4, h);
+
+  if (isGuide()) {
+    const g = guides();
+    const yt = g.top * h, yb = g.bottom * h;
+    guideLine(yt, t('topLine'), selected === 'top', ex, dir, w);
+    guideLine(yb, t('bottomLine'), selected === 'bottom', ex, dir, w);
+    cross(ex + dir * 40, (yt + yb) / 2, css('--guide'), t('middle'));
+  } else {
+    corner(ex, 0, dir, 1, t('topCorner'));
+    corner(ex, h, dir, -1, t('bottomCorner'));
+    cross(ex + dir * 40, h / 2, css('--mark'), t('middle'));
+  }
+
+  for (const p of touches) {
+    ctx.fillStyle = css('--touch');
+    ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, 7); ctx.fill();
+  }
+}
+
+function guideLine(y, label, active, ex, dir, w) {
+  const col = css('--guide');
+  ctx.strokeStyle = col; ctx.fillStyle = col;
+  ctx.lineWidth = active ? 3 : 2;
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(ex, y); ctx.lineTo(ex + dir * w * 0.45, y); ctx.stroke();
+  ctx.setLineDash([8, 8]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(ex + dir * w * 0.45, y); ctx.lineTo(ex + dir * w, y); ctx.stroke();
+  ctx.setLineDash([]);
+  // Arrow pointing at the edge
+  ctx.beginPath(); ctx.moveTo(ex, y); ctx.lineTo(ex + dir * 34, y - 16); ctx.lineTo(ex + dir * 34, y + 16); ctx.fill();
+  // Handle
+  ctx.beginPath(); ctx.arc(ex + dir * 120, y, active ? 14 : 11, 0, 7); ctx.fill();
+  ctx.font = '600 15px system-ui';
+  ctx.textAlign = dir < 0 ? 'right' : 'left';
+  ctx.fillText(label + (active ? '  (↑/↓)' : ''), ex + dir * 145, y < 30 ? y + 26 : y - 12);
+}
+
+function corner(x, y, dir, vdir, label) {
+  const col = css('--mark');
+  ctx.strokeStyle = col; ctx.fillStyle = col;
+  ctx.lineWidth = 6;
+  // L bracket exactly in the corner
+  ctx.beginPath(); ctx.moveTo(x + dir * 90, y + vdir * 3); ctx.lineTo(x + dir * 3, y + vdir * 3); ctx.lineTo(x + dir * 3, y + vdir * 90); ctx.stroke();
+  // Square with a cross
+  const s = 44, qx = x + dir * 3 + (dir < 0 ? -s : 0), qy = y + vdir * 3 + (vdir < 0 ? -s : 0);
+  ctx.lineWidth = 2; ctx.strokeRect(qx, qy, s, s);
+  ctx.beginPath(); ctx.moveTo(qx, qy); ctx.lineTo(qx + s, qy + s); ctx.moveTo(qx + s, qy); ctx.lineTo(qx, qy + s); ctx.stroke();
+  // Circle around the corner
+  ctx.beginPath(); ctx.arc(x, y, 70, 0, 7); ctx.stroke();
+  ctx.font = '600 15px system-ui';
+  ctx.textAlign = dir < 0 ? 'right' : 'left';
+  ctx.fillText(label, x + dir * 105, y + vdir * 30);
+}
+
+function cross(x, y, col, label) {
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x - 24, y); ctx.lineTo(x + 24, y); ctx.moveTo(x, y - 24); ctx.lineTo(x, y + 24); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, 14, 0, 7); ctx.stroke();
+  ctx.font = '14px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText(label, x, y + 44);
+}
+
+// Drag the lines with mouse or finger
+c.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch') { touches.push({ x: e.clientX, y: e.clientY }); if (touches.length > 12) touches.shift(); }
+  if (!S || !isGuide()) { draw(); return; }
+  const g = guides(), h = H();
+  drag = Math.abs(e.clientY - g.top * h) <= Math.abs(e.clientY - g.bottom * h) ? 'top' : 'bottom';
+  selected = drag;
+  local = { ...g };
+  c.setPointerCapture(e.pointerId);
+  moveTo(e.clientY);
+});
+c.addEventListener('pointermove', e => { if (drag) moveTo(e.clientY); });
+const endDrag = () => { if (drag) { drag = null; sendUi(local); } };
+c.addEventListener('pointerup', endDrag);
+c.addEventListener('pointercancel', endDrag);
+
+function moveTo(y) {
+  local[drag] = Math.min(Math.max(y / H(), 0), 1);
+  if (local.bottom < local.top + 0.01) {
+    if (drag === 'top') local.top = local.bottom - 0.01; else local.bottom = local.top + 0.01;
+  }
+  draw();
+  sendUi({ top: local.top, bottom: local.bottom });
+}
+
+let keyTimer;
+addEventListener('keydown', e => {
+  if (!S || !isGuide()) return;
+  if (e.key === 'Tab') { e.preventDefault(); selected = selected === 'top' ? 'bottom' : 'top'; draw(); return; }
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  e.preventDefault();
+  const step = (e.shiftKey ? 10 : 1) / H() * (e.key === 'ArrowUp' ? -1 : 1);
+  const g = { ...guides() };
+  g[selected] = Math.min(Math.max(g[selected] + step, 0), 1);
+  local = g; draw();
+  sendUi({ top: g.top, bottom: g.bottom });
+  clearTimeout(keyTimer); keyTimer = setTimeout(() => { if (!drag) local = null; }, 800);
+});
+
+// Panel controls (only visible on the main monitor)
+const status = (text, warn = false) => { $('status').textContent = text; $('status').classList.toggle('warn', warn); };
+const pairs = list => list.map(p => p.join(' / ')).join(', ');
+$('main').onchange = e => sendUi({ main: e.target.value });
+$('posLeft').onclick = () => sendUi({ side_pos: 'left' });
+$('posRight').onclick = () => sendUi({ side_pos: 'right' });
+$('result').onclick = e => { const b = e.target.closest('.sugg'); if (b) sendUi({ main_scale: parseFloat(b.dataset.s) }); };
+$('mainScale').onchange = e => sendUi({ main_scale: parseFloat(e.target.value) });
+$('guideMain').onclick = () => sendUi({ guide_on: U().main });
+$('guideSide').onclick = () => sendUi({ guide_on: U().side });
+$('estimate').onclick = () => { sendUi({ estimate: true }); status(t('estimated')); };
+$('apply').onclick = async () => {
+  const r = await post('/api/apply');
+  if (r.overlaps?.length) status(t('overlap') + pairs(r.overlaps), true); else status(t('applied'));
+  refresh();
+};
+$('save').onclick = async () => {
+  const r = await post('/api/save');
+  let text = r.errors ? t('hyprErrors') + r.errors : t('saved');
+  if (r.overlaps?.length) text += '\n' + t('overlap') + pairs(r.overlaps);
+  if (r.backup) text += '\n' + t('backup') + r.backup;
+  status(text, Boolean(r.errors || r.overlaps?.length));
+  refresh();
+};
+$('revert').onclick = async () => { await post('/api/revert'); status(t('reverted')); refresh(); };
+$('quit').onclick = () => post('/api/quit');
+
+resize();
+refresh();
+setInterval(refresh, 500);
+</script>
+</body>
+</html>

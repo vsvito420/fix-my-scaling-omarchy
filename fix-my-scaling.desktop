@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Fix My Scaling
+Name[de]=Monitor-Ausrichtung
+GenericName=Align monitors
+GenericName[de]=Monitore ausrichten
+Comment=Set side, height and scale of your monitors so they line up physically
+Comment[de]=Seite, Höhe und Skalierung der Monitore passend zur echten Anordnung einstellen
+Exec=@BIN@/fix-my-scaling
+Icon=video-display
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=monitor;display;scale;scaling;align;hyprland;touch;bildschirm;skalierung;ausrichten;
