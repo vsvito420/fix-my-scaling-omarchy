@@ -36,7 +36,7 @@ Fenster sind auf dem einen Bildschirm größer als auf dem anderen, und die Kant
 | 🎯 **Physisch ausrichten** | Echte Ecken über den Rahmen hinweg angleichen, mit Maus, Finger oder Pfeiltasten |
 | 📐 **Skalierungs-Vorschläge** | Hyprland nimmt pro Auflösung nur bestimmte „saubere“ Skalierungen an. Das Tool zeigt Paare, die fast genau passen (z. B. `1.6 / 1.333 ±0.4 %`) |
 | ↔️ **Links oder rechts** | Du stellst ein, auf welcher Seite der zweite Monitor steht. Vertauschte Monitore sind mit einem Klick korrigiert |
-| 🔄 **Gedrehte Bildschirme** | Funktioniert mit hochkant / gedrehten Monitoren. Drehung und Modus bleiben erhalten |
+| 🔄 **Gedrehte Bildschirme** | Beim Start fragt jeder Monitor, welche Kante physisch oben ist, und dreht sich passend. Danach rechnet die Ausrichtung mit der richtigen Lage |
 | 🧱 **Keine Überlappung** | Schreibt exakte Skalierungen (`4/3` statt `1.33333`) und stellt in sicherer Reihenfolge um. Hyprland meldet dadurch nie *„Monitor überlappt mit anderen Monitoren“*. Nach dem Speichern wird neu geladen und nochmal geprüft |
 | 👆 **Touch-Test** | Jeder Tipp erscheint als roter Punkt, praktisch für Touchscreens auf gedrehten Monitoren |
 | 💾 **Sicheres Speichern** | Nur die `hl.monitor(...)`-Zeilen der beiden Monitore werden geändert. Vorher wird ein Backup `monitors.lua.bak.<zeit>` angelegt |

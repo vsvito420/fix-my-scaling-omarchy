@@ -26,12 +26,29 @@
   .muted { color: var(--muted); }
   #status { font-size: 13px; color: var(--muted); min-height: 1.3em; white-space: pre-wrap; }
   #status.warn { color: #ff9f43; }
+  #orient { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; pointer-events: none; }
+  #orient .msg { font-size: 30px; font-weight: 700; max-width: 70vw; }
+  #orient .msg small { display: block; font-size: 16px; font-weight: 400; color: var(--muted); margin-top: 10px; }
+  .up { position: fixed; display: flex; align-items: center; justify-content: center; background: rgba(63,169,255,.18); border: 2px solid var(--accent); color: var(--fg); font-size: 22px; font-weight: 700; border-radius: 10px; pointer-events: auto; }
+  .up:hover { background: rgba(63,169,255,.45); }
+  .up[data-edge=top] { top: 8px; left: 20vw; right: 20vw; height: 90px; }
+  .up[data-edge=bottom] { bottom: 8px; left: 20vw; right: 20vw; height: 90px; }
+  .up[data-edge=left] { left: 8px; top: 20vh; bottom: 20vh; width: 90px; writing-mode: vertical-rl; }
+  .up[data-edge=right] { right: 8px; top: 20vh; bottom: 20vh; width: 90px; writing-mode: vertical-rl; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="role"><div class="big" id="roleBig"></div><div class="small" id="roleSmall"></div></div>
+
+<div id="orient" hidden>
+  <div class="msg"><span data-t="whereUp"></span><small id="orientSub"></small></div>
+  <button class="up" data-edge="top">↑ <span data-t="upHere"></span></button>
+  <button class="up" data-edge="right">→ <span data-t="upHere"></span></button>
+  <button class="up" data-edge="bottom">↓ <span data-t="upHere"></span></button>
+  <button class="up" data-edge="left">← <span data-t="upHere"></span></button>
+</div>
 
 <div id="panel" hidden>
   <h1 data-t="title"></h1>
@@ -55,6 +72,7 @@
     <button id="save" class="primary" data-t="save"></button>
   </div>
   <div class="actions">
+    <button id="reorient" data-t="reorient"></button>
     <button id="revert" data-t="revert"></button>
     <button id="quit" data-t="quit"></button>
   </div>
@@ -85,6 +103,9 @@ const T = {
     overlap: 'Warning, monitors overlap: ',
     saved: 'Saved to monitors.lua.', backup: 'Backup: ', hyprErrors: 'Saved, but Hyprland reports:\n',
     reverted: 'Loaded the saved state from monitors.lua.',
+    whereUp: 'Which edge of this monitor is physically UP?', upHere: 'UP is here',
+    orientWait: 'Click or tap the edge that is at the top in reality. The screen rotates until it matches.',
+    orientDone: 'Done. Waiting for the other monitor…', reorient: 'Set orientation again',
   },
   de: {
     title: 'Monitor-Ausrichtung',
@@ -107,6 +128,9 @@ const T = {
     overlap: 'Achtung, Monitore überlappen: ',
     saved: 'Gespeichert in monitors.lua.', backup: 'Backup: ', hyprErrors: 'Gespeichert, aber Hyprland meldet:\n',
     reverted: 'Gespeicherten Stand aus monitors.lua geladen.',
+    whereUp: 'Welche Kante dieses Monitors ist physisch OBEN?', upHere: 'OBEN ist hier',
+    orientWait: 'Klick oder tippe auf die Kante, die in echt oben ist. Das Bild dreht sich, bis es passt.',
+    orientDone: 'Erledigt. Warte auf den anderen Monitor…', reorient: 'Ausrichtung neu festlegen',
   },
 };
 const t = k => (T[LANG] || T.en)[k];
@@ -165,6 +189,12 @@ const guides = () => local || { top: U().top, bottom: U().bottom };
 
 function render() {
   if (!S) return;
+  const orienting = S.orienting, done = U().upright.includes(me);
+  $('orient').hidden = !orienting;
+  $('role').hidden = orienting;
+  document.querySelectorAll('.up').forEach(b => { b.hidden = done; });
+  $('orientSub').textContent = done ? t('orientDone') : t('orientWait');
+  if (orienting) { $('panel').hidden = true; ctx.clearRect(0, 0, W(), H()); return; }
   const role = isMain() ? t('roleMain') : isSide() ? t('roleSide') : '—';
   $('roleBig').textContent = `${role}: ${nameOf(me)}`;
   $('roleSmall').textContent = isGuide() ? t('guideHint') : t('markHint');
@@ -213,7 +243,7 @@ function renderPanel() {
 function draw() {
   const w = W(), h = H();
   ctx.clearRect(0, 0, w, h);
-  if (!S || !(isMain() || isSide())) return;
+  if (!S || S.orienting || !(isMain() || isSide())) return;
   const edge = myEdge();
   const ex = edge === 'right' ? w : 0;       // x of the shared edge
   const dir = edge === 'right' ? -1 : 1;     // direction into the screen
@@ -286,7 +316,7 @@ function cross(x, y, col, label) {
 // Drag the lines with mouse or finger
 c.addEventListener('pointerdown', e => {
   if (e.pointerType === 'touch') { touches.push({ x: e.clientX, y: e.clientY }); if (touches.length > 12) touches.shift(); }
-  if (!S || !isGuide()) { draw(); return; }
+  if (!S || S.orienting || !isGuide()) { draw(); return; }
   const g = guides(), h = H();
   drag = Math.abs(e.clientY - g.top * h) <= Math.abs(e.clientY - g.bottom * h) ? 'top' : 'bottom';
   selected = drag;
@@ -310,7 +340,7 @@ function moveTo(y) {
 
 let keyTimer;
 addEventListener('keydown', e => {
-  if (!S || !isGuide()) return;
+  if (!S || S.orienting || !isGuide()) return;
   if (e.key === 'Tab') { e.preventDefault(); selected = selected === 'top' ? 'bottom' : 'top'; draw(); return; }
   if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
@@ -347,6 +377,10 @@ $('save').onclick = async () => {
   refresh();
 };
 $('revert').onclick = async () => { await post('/api/revert'); status(t('reverted')); refresh(); };
+document.querySelectorAll('.up').forEach(b => {
+  b.onclick = async () => { await post('/api/up', { mon: me, edge: b.dataset.edge }); refresh(); };
+});
+$('reorient').onclick = async () => { await post('/api/reorient'); refresh(); };
 $('quit').onclick = () => post('/api/quit');
 
 resize();

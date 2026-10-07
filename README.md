@@ -36,7 +36,7 @@ Guessing `position = "1080x269"` and `scale = 1.33` in `monitors.lua` until it f
 | 🎯 **Physical alignment** | Line up real corners across the bezel, with the mouse, a finger or the arrow keys |
 | 📐 **Scale suggestions** | Hyprland only accepts certain "clean" scales per resolution. The tool lists pairs that match within fractions of a percent (e.g. `1.6 / 1.333 ±0.4 %`) |
 | ↔️ **Left or right** | Tell it which side the second monitor is on. Swapped monitors are fixed with one click |
-| 🔄 **Rotated screens** | Works with portrait / rotated monitors. Rotation and mode are kept as they are |
+| 🔄 **Rotated screens** | On start every monitor asks which edge is physically up and rotates itself to match, then the alignment uses the right orientation |
 | 🧱 **No overlaps** | Writes exact scales (`4/3` instead of `1.33333`) and applies changes in a safe order, so Hyprland never reports *"monitor overlaps with other monitor(s)"*. After saving it reloads and checks again |
 | 👆 **Touch check** | Every tap shows up as a red dot, handy for touchscreens on rotated monitors |
 | 💾 **Safe saving** | Only the `hl.monitor(...)` lines of the two monitors change. A backup `monitors.lua.bak.<time>` is made first |

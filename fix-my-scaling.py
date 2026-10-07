@@ -46,6 +46,7 @@ ui = {
     "guide_on": None,     # monitor that shows the guide lines (the physically taller one)
     "top": 0.0,           # guide lines as a fraction of the guide monitor's height
     "bottom": 1.0,
+    "upright": [],        # monitors whose "up" edge the user has confirmed
 }
 lock = threading.Lock()
 
@@ -282,7 +283,8 @@ def state():
                 ui["side_pos"] = "right" if s["x"] >= m["x"] else "left"
                 estimate(mons)
         return {
-            "ui": dict(ui),
+            "ui": dict(ui, upright=[n for n in ui["upright"] if n in mons]),
+            "orienting": not all(n in ui["upright"] for n in mons),
             "monitors": {n: {
                 "name": n, "description": m["description"], "x": m["x"], "y": m["y"],
                 "scale": m["scale"], "transform": m["transform"],
@@ -313,6 +315,32 @@ def update_ui(body, mons):
         estimate(mons, ui["guide_on"])
     ui["top"] = min(max(ui["top"], 0.0), 0.99)
     ui["bottom"] = min(max(ui["bottom"], ui["top"] + 0.01), 1.0)
+
+
+# Clockwise order of the screen edges as currently displayed
+EDGES = ("top", "right", "bottom", "left")
+
+
+def set_up(mons, name, edge):
+    """The user tapped the edge that is physically up; rotate so it becomes the top.
+
+    Hyprland/Wayland transforms rotate counter-clockwise in 90° steps: if the
+    displayed right edge points up, the panel is turned 90° CCW, so add 1.
+    """
+    if name not in mons or edge not in EDGES:
+        return
+    if edge == "top":
+        if name not in ui["upright"]:
+            ui["upright"].append(name)
+        return
+    m = mons[name]
+    t = m["transform"]
+    new = (t & 4) | ((t + EDGES.index(edge)) % 4)
+    m = dict(m, transform=new)
+    sh("hyprctl", "eval", monitor_line(name, m, m["x"], m["y"], m["scale"]))
+    time.sleep(0.5)
+    # Sizes changed, so start the alignment from scratch
+    ui["main"] = ui["side"] = ui["main_scale"] = None
 
 
 def close_windows():
@@ -372,7 +400,11 @@ class Handler(BaseHTTPRequestHandler):
         mons = monitors()
         reply = {}
         with lock:
-            if url.path == "/api/ui":
+            if url.path == "/api/up":
+                set_up(mons, body.get("mon"), body.get("edge"))
+            elif url.path == "/api/reorient":
+                ui["upright"] = []
+            elif url.path == "/api/ui":
                 update_ui(body, mons)
             elif url.path == "/api/apply":
                 reply = {"overlaps": apply_live(mons, compute(mons))}
